@@ -1,6 +1,7 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
+//Adafruit PWM Servo Driver Library    instalar biblioteca 
 Adafruit_PWMServoDriver pca = Adafruit_PWMServoDriver(0x40);
 
 // Ajuste fino conforme seus servos
