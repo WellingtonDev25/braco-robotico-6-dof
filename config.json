@@ -1,0 +1,43 @@
+{
+    "porta_arduino": "COM5",
+    "baudrate": 115200,
+    "arquivo_gravacao": "movimentos_servos.pkl",
+    "servos": {
+        "Base": {
+            "canal": 1,
+            "min": 0,
+            "max": 180,
+            "inicial": 74
+        },
+        "Ombro": {
+            "canal": 2,
+            "min": 0,
+            "max": 120,
+            "inicial": 24
+        },
+        "Cotovelo": {
+            "canal": 3,
+            "min": 0,
+            "max": 180,
+            "inicial": 180
+        },
+        "Pulso": {
+            "canal": 4,
+            "min": 0,
+            "max": 180,
+            "inicial": 77
+        },
+        "Rotação Garra": {
+            "canal": 5,
+            "min": 0,
+            "max": 180,
+            "inicial": 128
+        },
+        "Garra": {
+            "canal": 6,
+            "min": 0,
+            "max": 180,
+            "inicial": 116
+        }
+    }
+}
