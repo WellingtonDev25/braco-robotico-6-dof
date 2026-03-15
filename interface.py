@@ -27,6 +27,10 @@ CONFIG_PADRAO = {
     "porta_arduino": "COM5",
     "baudrate": 115200,
     "arquivo_gravacao": "movimentos_servos.pkl",
+    "pausa_execucao_gravacao": 0.01,
+    "pausa_posicao_inicial": 0.05,
+    "delta_min_gravacao_graus": 2,
+    "intervalo_min_gravacao_segundos": 0.04,
     "servos": {
         "Base": {
             "canal": 1,
@@ -90,6 +94,11 @@ ARQUIVO_GRAVACAO = os.path.join(
     CONFIG.get("arquivo_gravacao", "movimentos_servos.pkl")
 )
 
+PAUSA_EXECUCAO_GRAVACAO = float(CONFIG.get("pausa_execucao_gravacao", 0.05))
+PAUSA_POSICAO_INICIAL = float(CONFIG.get("pausa_posicao_inicial", 0.05))
+DELTA_MIN_GRAVACAO_GRAUS = int(CONFIG.get("delta_min_gravacao_graus", 2))
+INTERVALO_MIN_GRAVACAO_SEGUNDOS = float(CONFIG.get("intervalo_min_gravacao_segundos", 0.04))
+
 SERVOS_CONFIG = CONFIG.get("servos", {})
 
 ctk.set_appearance_mode("dark")
@@ -115,6 +124,8 @@ class App(ctk.CTk):
         self.gravando = False
         self.movimentos_gravados = []
         self.tempo_inicio_gravacao = None
+        self.ultimo_angulo_gravado = {}
+        self.ultimo_tempo_gravado = {}
 
         self.protocol("WM_DELETE_WINDOW", self.fechar_app)
 
@@ -280,9 +291,9 @@ class App(ctk.CTk):
         try:
             self.status(f"Conectando ao Arduino em {PORTA_ARDUINO}...")
             self.ser = serial.Serial(PORTA_ARDUINO, BAUDRATE, timeout=1)
-            time.sleep(2.5)
+            time.sleep(2.0)
 
-            resposta = self.ler_linhas_por_tempo(3)
+            resposta = self.ler_linhas_por_tempo(1.0)
             print("Resposta inicial:", resposta)
 
             self.status("Arduino conectado com sucesso.")
@@ -297,7 +308,7 @@ class App(ctk.CTk):
                 f"Detalhes: {e}"
             )
 
-    def ler_linhas_por_tempo(self, segundos=1.5):
+    def ler_linhas_por_tempo(self, segundos=1.0):
         fim = time.time() + segundos
         linhas = []
 
@@ -309,7 +320,7 @@ class App(ctk.CTk):
                         linhas.append(linha)
             except Exception:
                 pass
-            time.sleep(0.05)
+            time.sleep(0.02)
 
         return linhas
 
@@ -347,6 +358,8 @@ class App(ctk.CTk):
 
         self.movimentos_gravados = []
         self.tempo_inicio_gravacao = time.time()
+        self.ultimo_angulo_gravado = {}
+        self.ultimo_tempo_gravado = {}
         self.gravando = True
 
         self.btn_gravar.configure(text="Parar Gravação", fg_color="#c67f00", hover_color="#a56600")
@@ -389,15 +402,33 @@ class App(ctk.CTk):
         if self.tempo_inicio_gravacao is None:
             self.tempo_inicio_gravacao = time.time()
 
-        tempo_relativo = time.time() - self.tempo_inicio_gravacao
+        agora = time.time()
+        tempo_relativo = agora - self.tempo_inicio_gravacao
         canal = self.obter_canal(nome_servo)
+
+        ultimo_angulo = self.ultimo_angulo_gravado.get(nome_servo)
+        ultimo_tempo = self.ultimo_tempo_gravado.get(nome_servo, 0)
+
+        angulo = int(angulo)
+
+        if ultimo_angulo == angulo:
+            return
+
+        if ultimo_angulo is not None and abs(angulo - int(ultimo_angulo)) < DELTA_MIN_GRAVACAO_GRAUS:
+            return
+
+        if (agora - ultimo_tempo) < INTERVALO_MIN_GRAVACAO_SEGUNDOS:
+            return
 
         self.movimentos_gravados.append({
             "t": tempo_relativo,
             "servo": nome_servo,
             "canal": int(canal),
-            "angulo": int(angulo)
+            "angulo": angulo
         })
+
+        self.ultimo_angulo_gravado[nome_servo] = angulo
+        self.ultimo_tempo_gravado[nome_servo] = agora
 
     def executar_movimento_salvo(self):
         if self.gravando:
@@ -418,8 +449,8 @@ class App(ctk.CTk):
         try:
             self.executando_movimento = True
             self.enviando_em_lote = True
-            self.btn_executar.configure(state="disabled")
-            self.btn_gravar.configure(state="disabled")
+            self.after(0, lambda: self.btn_executar.configure(state="disabled"))
+            self.after(0, lambda: self.btn_gravar.configure(state="disabled"))
 
             with open(ARQUIVO_GRAVACAO, "rb") as f:
                 dados = pickle.load(f)
@@ -428,15 +459,28 @@ class App(ctk.CTk):
 
             if not movimentos:
                 self.status("Arquivo de gravação vazio.")
-                messagebox.showwarning("Aviso", "A gravação está vazia.")
+                self.after(0, lambda: messagebox.showwarning("Aviso", "A gravação está vazia."))
                 return
+
+            # Remove movimentos consecutivos idênticos por servo
+            movimentos_filtrados = []
+            ultimo_por_servo = {}
+
+            for mov in movimentos:
+                nome = mov.get("servo")
+                angulo = int(mov["angulo"])
+
+                if ultimo_por_servo.get(nome) == angulo:
+                    continue
+
+                movimentos_filtrados.append(mov)
+                ultimo_por_servo[nome] = angulo
+
+            movimentos = movimentos_filtrados
 
             self.status("Executando movimento salvo...")
 
-            tempo_anterior = 0.0
-
             for mov in movimentos:
-                tempo_atual = float(mov["t"])
                 canal = int(mov["canal"])
                 nome = mov.get("servo") or self.obter_nome_por_canal(canal)
                 if nome is None:
@@ -444,21 +488,17 @@ class App(ctk.CTk):
 
                 angulo = self.limitar_angulo_por_nome(nome, int(mov["angulo"]))
 
-                espera = max(0.0, tempo_atual - tempo_anterior)
-                time.sleep(espera)
-
                 self.enviar_comando(f"{canal},{angulo}")
 
-                if nome in self.sliders:
-                    self.after(0, lambda n=nome, a=angulo: self.sliders[n].set(a))
+                if nome in self.labels_valor:
                     self.after(0, lambda n=nome, a=angulo: self.labels_valor[n].configure(text=f"{a}°"))
 
-                tempo_anterior = tempo_atual
+                time.sleep(PAUSA_EXECUCAO_GRAVACAO)
 
             self.status("Execução da gravação concluída.")
 
         except Exception as e:
-            messagebox.showerror("Erro", f"Não foi possível executar a gravação.\n\n{e}")
+            self.after(0, lambda: messagebox.showerror("Erro", f"Não foi possível executar a gravação.\n\n{e}"))
             self.status("Erro ao executar gravação.")
         finally:
             self.executando_movimento = False
@@ -498,7 +538,7 @@ class App(ctk.CTk):
             self.after(0, lambda n=nome, a=angulo: self.labels_valor[n].configure(text=f"{a}°"))
 
             self.enviar_comando(f"{canal},{angulo}")
-            time.sleep(0.18)
+            time.sleep(PAUSA_POSICAO_INICIAL)
 
         self.status("Servos movidos para a posição inicial.")
         self.enviando_em_lote = False

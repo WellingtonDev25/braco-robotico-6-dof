@@ -7,13 +7,13 @@
             "canal": 1,
             "min": 0,
             "max": 180,
-            "inicial": 74
+            "inicial": 125
         },
         "Ombro": {
             "canal": 2,
             "min": 0,
             "max": 120,
-            "inicial": 24
+            "inicial": 71
         },
         "Cotovelo": {
             "canal": 3,
@@ -25,13 +25,13 @@
             "canal": 4,
             "min": 0,
             "max": 180,
-            "inicial": 77
+            "inicial": 102
         },
         "Rotação Garra": {
             "canal": 5,
             "min": 0,
             "max": 180,
-            "inicial": 128
+            "inicial": 106
         },
         "Garra": {
             "canal": 6,
